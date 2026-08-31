@@ -1,0 +1,28 @@
+trigger:
+  - main
+
+pr:
+  - main
+
+pool:
+  name: cloud
+
+variables:
+  imageName: registry.dfl.com.cn/devsecops/azure/devsecops-demo
+  imageTag: $(Build.BuildId)
+
+steps:
+  - script: python3 -m unittest discover -v
+    displayName: Unit tests
+
+  - script: |
+      sonar-scanner \
+        -Dsonar.projectKey=devsecops-demo-azure \
+        -Dsonar.host.url=$(SONAR_HOST_URL) \
+        -Dsonar.token=$(SONAR_TOKEN)
+    displayName: SonarQube scan
+
+  - script: |
+      docker build -t $(imageName):$(imageTag) .
+      docker push $(imageName):$(imageTag)
+    displayName: Build and push image

@@ -1,0 +1,29 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: devsecops-demo
+  labels:
+    app: devsecops-demo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: devsecops-demo
+  template:
+    metadata:
+      labels:
+        app: devsecops-demo
+    spec:
+      containers:
+        - name: devsecops-demo
+          image: __IMAGE_TAG__
+          ports:
+            - containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
