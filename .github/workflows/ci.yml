@@ -33,10 +33,10 @@ jobs:
 
       - name: SonarQube scan
         if: ${{ env.SONAR_TOKEN != '' }}
-        run: |
-          sonar-scanner \
-            -Dsonar.host.url="${SONAR_HOST_URL}" \
-            -Dsonar.token="${SONAR_TOKEN}"
+        uses: SonarSource/sonarqube-scan-action@v8.2.1
+        env:
+          SONAR_HOST_URL: ${{ env.SONAR_HOST_URL }}
+          SONAR_TOKEN: ${{ env.SONAR_TOKEN }}
 
       - name: Build image
         run: docker build -t "${IMAGE_NAME}:${GITHUB_RUN_NUMBER}" .
