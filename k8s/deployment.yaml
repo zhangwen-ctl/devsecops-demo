@@ -16,7 +16,7 @@ spec:
     spec:
       containers:
         - name: devsecops-demo
-          image: __IMAGE_TAG__
+          image: registry.dfl.com.cn/devops/github/devsecops-demo:6
           ports:
             - containerPort: 8080
           readinessProbe:
