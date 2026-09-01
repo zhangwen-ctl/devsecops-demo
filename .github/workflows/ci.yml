@@ -21,6 +21,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Verify self-hosted runner
+        run: |
+          echo "Runner host: $(hostname -f)"
+          echo "Runner labels: ${RUNNER_LABELS}"
+          echo "OS: $(. /etc/os-release && echo "${PRETTY_NAME}")"
+          docker version --format 'Docker server: {{.Server.Version}}'
+
       - name: Unit tests
         run: python3 -m unittest discover -v
 
