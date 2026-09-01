@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 env:
-  IMAGE_NAME: registry.dfl.com.cn/devsecops/github/devsecops-demo
+  IMAGE_NAME: registry.dfl.com.cn/devops/github/devsecops-demo
   SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
   SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
   PUBLISH_IMAGE: ${{ secrets.PUBLISH_IMAGE }}
