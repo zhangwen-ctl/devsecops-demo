@@ -6,14 +6,15 @@ on:
   pull_request:
 
 permissions:
-  contents: read
+  contents: write          # 关键：原来是 read，推送提交必须改 write
 
 env:
   IMAGE_NAME: registry.dfl.com.cn/devops/github/devsecops-demo
   SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
   SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
   PUBLISH_IMAGE: ${{ secrets.PUBLISH_IMAGE }}
-  GITOPS_MANIFEST_PATH: k8s/deployment.yaml          # 根据项目实际路径修改
+  GITOPS_MANIFEST_PATH: k8s/deployment.yaml
+  CONTAINER_NAME: devsecops-demo    # ⚠️ 见下方说明，必须和你 deployment.yaml 里的容器名一致
 
 jobs:
   test-and-build:
@@ -22,12 +23,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0                              # 需要完整历史来推送
+          fetch-depth: 0    # 推送提交需要完整历史
 
       - name: Verify self-hosted runner
         run: |
           echo "Runner host: $(hostname -f)"
-          echo "Runner labels: ${RUNNER_LABELS}"
           echo "OS: $(. /etc/os-release && echo "${PRETTY_NAME}")"
           docker version --format 'Docker server: {{.Server.Version}}'
 
@@ -47,7 +47,8 @@ jobs:
       - name: Push image
         run: docker push "${IMAGE_NAME}:${GITHUB_RUN_NUMBER}"
 
-      # ========== 新增步骤：更新 GitOps 清单 ==========
+      # ========= 以下为 GitOps 更新部分 =========
+
       - name: Install yq
         run: |
           if ! command -v yq &> /dev/null; then
@@ -57,22 +58,36 @@ jobs:
           fi
           yq --version
 
+      - name: Sanity check manifest path
+        run: |
+          echo "GITHUB_WORKSPACE=$GITHUB_WORKSPACE"
+          echo "pwd=$(pwd)"
+          echo "--- 检查文件是否存在 ---"
+          ls -la "${GITHUB_WORKSPACE}/k8s/"
+          test -f "${GITHUB_WORKSPACE}/${GITOPS_MANIFEST_PATH}" \
+            || { echo "::error::找不到 ${GITOPS_MANIFEST_PATH}"; exit 1; }
+          echo "--- deployment.yaml 当前 image 字段 ---"
+          yq '.spec.template.spec.containers[].image' \
+            "${GITHUB_WORKSPACE}/${GITOPS_MANIFEST_PATH}"
+
       - name: Update GitOps manifest
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        working-directory: ${{ github.workspace }}
         run: |
           NEW_TAG="${GITHUB_RUN_NUMBER}"
           MANIFEST="${GITOPS_MANIFEST_PATH}"
 
-          # 使用 yq 更新 Deployment 中的镜像标签
           yq -i "
-            (.spec.template.spec.containers[] | select(.name == \"devsecops-demo\") | .image) =
-            \"${IMAGE_NAME}:${NEW_TAG}\"" "${MANIFEST}"
+            (.spec.template.spec.containers[]
+              | select(.name == \"${CONTAINER_NAME}\")
+              | .image) = \"${IMAGE_NAME}:${NEW_TAG}\"" "${MANIFEST}"
 
           echo "=== 变更对比 ==="
-          git diff "${MANIFEST}" || true
+          git --no-pager diff "${MANIFEST}"
 
       - name: Commit and push GitOps change
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        working-directory: ${{ github.workspace }}
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -80,8 +95,9 @@ jobs:
           git add "${GITOPS_MANIFEST_PATH}"
 
           if git diff --cached --quiet; then
-            echo "没有变更，跳过提交"
-          else
-            git commit -m "chore(gitops): update image tag to ${GITHUB_RUN_NUMBER} [skip ci]"
-            git push
+            echo "清单无变更，跳过提交"
+            exit 0
           fi
+
+          git commit -m "chore(gitops): update image to ${GITHUB_RUN_NUMBER} [skip ci]"
+          git push
