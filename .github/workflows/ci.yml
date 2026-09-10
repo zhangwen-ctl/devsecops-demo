@@ -6,7 +6,7 @@ on:
   pull_request:
 
 permissions:
-  contents: write          # 关键：原来是 read，推送提交必须改 write
+  contents: write          # 必须 write，否则最后 git push 会 403
 
 env:
   IMAGE_NAME: registry.dfl.com.cn/devops/github/devsecops-demo
@@ -14,7 +14,6 @@ env:
   SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
   PUBLISH_IMAGE: ${{ secrets.PUBLISH_IMAGE }}
   GITOPS_MANIFEST_PATH: k8s/deployment.yaml
-  CONTAINER_NAME: devsecops-demo    # ⚠️ 见下方说明，必须和你 deployment.yaml 里的容器名一致
 
 jobs:
   test-and-build:
@@ -23,11 +22,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0    # 推送提交需要完整历史
+          fetch-depth: 0    # git push 需要完整历史
 
       - name: Verify self-hosted runner
         run: |
           echo "Runner host: $(hostname -f)"
+          echo "Runner labels: ${RUNNER_LABELS}"
           echo "OS: $(. /etc/os-release && echo "${PRETTY_NAME}")"
           docker version --format 'Docker server: {{.Server.Version}}'
 
@@ -47,47 +47,37 @@ jobs:
       - name: Push image
         run: docker push "${IMAGE_NAME}:${GITHUB_RUN_NUMBER}"
 
-      # ========= 以下为 GitOps 更新部分 =========
+      # ==================== GitOps 更新 ====================
 
-      - name: Install yq
+      - name: Sanity check manifest
         run: |
-          if ! command -v yq &> /dev/null; then
-            sudo wget -qO /usr/local/bin/yq \
-              https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
-            sudo chmod +x /usr/local/bin/yq
-          fi
-          yq --version
-
-      - name: Sanity check manifest path
-        run: |
-          echo "GITHUB_WORKSPACE=$GITHUB_WORKSPACE"
           echo "pwd=$(pwd)"
-          echo "--- 检查文件是否存在 ---"
-          ls -la "${GITHUB_WORKSPACE}/k8s/"
-          test -f "${GITHUB_WORKSPACE}/${GITOPS_MANIFEST_PATH}" \
-            || { echo "::error::找不到 ${GITOPS_MANIFEST_PATH}"; exit 1; }
-          echo "--- deployment.yaml 当前 image 字段 ---"
-          yq '.spec.template.spec.containers[].image' \
-            "${GITHUB_WORKSPACE}/${GITOPS_MANIFEST_PATH}"
+          echo "=== k8s 目录 ==="
+          ls -la k8s/
+          echo "=== 当前 image 字段 ==="
+          grep -n "image:" "${GITOPS_MANIFEST_PATH}" \
+            || { echo "::error::${GITOPS_MANIFEST_PATH} 里找不到 image:"; exit 1; }
 
       - name: Update GitOps manifest
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-        working-directory: ${{ github.workspace }}
         run: |
-          NEW_TAG="${GITHUB_RUN_NUMBER}"
-          MANIFEST="${GITOPS_MANIFEST_PATH}"
+          NEW_IMAGE="${IMAGE_NAME}:${GITHUB_RUN_NUMBER}"
+          echo "NEW_IMAGE=${NEW_IMAGE}"
 
-          yq -i "
-            (.spec.template.spec.containers[]
-              | select(.name == \"${CONTAINER_NAME}\")
-              | .image) = \"${IMAGE_NAME}:${NEW_TAG}\"" "${MANIFEST}"
+          echo "=== 替换前 ==="
+          grep -n "image:" "${GITOPS_MANIFEST_PATH}"
 
-          echo "=== 变更对比 ==="
-          git --no-pager diff "${MANIFEST}"
+          # 用 | 作分隔符，避开 IMAGE_NAME 里的 /
+          sed -i "s|${IMAGE_NAME}:[^[:space:]]*|${NEW_IMAGE}|g" \
+            "${GITOPS_MANIFEST_PATH}"
+
+          echo "=== 替换后 ==="
+          grep -n "image:" "${GITOPS_MANIFEST_PATH}"
+          echo "=== git diff ==="
+          git --no-pager diff "${GITOPS_MANIFEST_PATH}"
 
       - name: Commit and push GitOps change
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-        working-directory: ${{ github.workspace }}
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
