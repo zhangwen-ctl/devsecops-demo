@@ -13,6 +13,7 @@ env:
   SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
   SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
   PUBLISH_IMAGE: ${{ secrets.PUBLISH_IMAGE }}
+  GITOPS_MANIFEST_PATH: k8s/deployment.yaml          # 根据项目实际路径修改
 
 jobs:
   test-and-build:
@@ -20,6 +21,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0                              # 需要完整历史来推送
 
       - name: Verify self-hosted runner
         run: |
@@ -43,3 +46,42 @@ jobs:
 
       - name: Push image
         run: docker push "${IMAGE_NAME}:${GITHUB_RUN_NUMBER}"
+
+      # ========== 新增步骤：更新 GitOps 清单 ==========
+      - name: Install yq
+        run: |
+          if ! command -v yq &> /dev/null; then
+            sudo wget -qO /usr/local/bin/yq \
+              https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+            sudo chmod +x /usr/local/bin/yq
+          fi
+          yq --version
+
+      - name: Update GitOps manifest
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        run: |
+          NEW_TAG="${GITHUB_RUN_NUMBER}"
+          MANIFEST="${GITOPS_MANIFEST_PATH}"
+
+          # 使用 yq 更新 Deployment 中的镜像标签
+          yq -i "
+            (.spec.template.spec.containers[] | select(.name == \"devsecops-demo\") | .image) =
+            \"${IMAGE_NAME}:${NEW_TAG}\"" "${MANIFEST}"
+
+          echo "=== 变更对比 ==="
+          git diff "${MANIFEST}" || true
+
+      - name: Commit and push GitOps change
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add "${GITOPS_MANIFEST_PATH}"
+
+          if git diff --cached --quiet; then
+            echo "没有变更，跳过提交"
+          else
+            git commit -m "chore(gitops): update image tag to ${GITHUB_RUN_NUMBER} [skip ci]"
+            git push
+          fi
