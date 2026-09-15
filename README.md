@@ -28,3 +28,5 @@ The repository includes:
 - `azure-pipelines.yml` for Azure DevOps Pipelines
 - `.github/workflows/ci.yml` for GitHub Actions
 - `k8s/` starter manifests for the later GitOps phase
+
+- 
