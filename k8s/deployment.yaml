@@ -16,7 +16,7 @@ spec:
     spec:
       containers:
         - name: devsecops-demo
-          image: registry.dfl.com.cn/devops/github/devsecops-demo:13
+          image: registry.dfl.com.cn/devops/github/devsecops-demo:15
           ports:
             - containerPort: 8080
           readinessProbe:
