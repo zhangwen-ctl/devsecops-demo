@@ -1,0 +1,11 @@
+# 默认所有文件的审查者
+* @your-org/devops-team
+
+# k8s 部署清单文件，必须由 DevOps 团队审查
+/k8s/ @your-org/devops-team
+
+# CI/CD 流水线配置，变更需严格审查
+/.github/workflows/ @your-org/devops-team
+
+# CODEOWNERS 文件自身，变更需核心团队批准
+/.github/CODEOWNERS @your-org/core-team
