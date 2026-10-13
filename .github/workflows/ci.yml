@@ -18,6 +18,7 @@ env:
 jobs:
   test-and-build:
     runs-on: self-hosted
+    environment: production
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -44,8 +45,33 @@ jobs:
       - name: Build image
         run: docker build -t "${IMAGE_NAME}:${GITHUB_RUN_NUMBER}" .
 
-      - name: Push image
-        run: docker push "${IMAGE_NAME}:${GITHUB_RUN_NUMBER}"
+      - name: Login to image registry
+        env:
+          DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+          DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
+        run: |
+          REGISTRY_HOST="${IMAGE_NAME%%/*}"
+          printf '%s' "${DOCKER_PASSWORD}" | docker login "${REGISTRY_HOST}" \
+            --username "${DOCKER_USERNAME}" --password-stdin
+
+      - name: Push image and resolve immutable digest
+        id: image
+        run: |
+          IMAGE_TAG="${IMAGE_NAME}:${GITHUB_RUN_NUMBER}"
+          docker push "${IMAGE_TAG}"
+
+          # RepoDigests is populated from the registry's manifest response.
+          DIGEST=$(docker image inspect "${IMAGE_TAG}" \
+            --format '{{index .RepoDigests 0}}' \
+            | awk -F@ '{print $2}')
+
+          if [ -z "${DIGEST}" ] || ! printf '%s' "${DIGEST}" | grep -Eq '^sha256:[0-9a-f]{64}$'; then
+            echo "::error::无法获取或校验镜像 Manifest Digest"
+            exit 1
+          fi
+
+          echo "image=${IMAGE_NAME}@${DIGEST}" >> "${GITHUB_OUTPUT}"
+          echo "digest=${DIGEST}" >> "${GITHUB_OUTPUT}"
 
       # ==================== GitOps 更新 ====================
 
@@ -60,19 +86,27 @@ jobs:
 
       - name: Update GitOps manifest
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        env:
+          NEW_IMAGE: ${{ steps.image.outputs.image }}
         run: |
-          NEW_IMAGE="${IMAGE_NAME}:${GITHUB_RUN_NUMBER}"
-          echo "NEW_IMAGE=${NEW_IMAGE}"
+          if ! printf '%s' "${NEW_IMAGE}" | grep -Eq "^${IMAGE_NAME}@sha256:[0-9a-f]{64}$"; then
+            echo "::error::镜像 Digest 格式无效: ${NEW_IMAGE}"
+            exit 1
+          fi
 
+          echo "更新 GitOps 为不可变 Digest: ${NEW_IMAGE}"
           echo "=== 替换前 ==="
           grep -n "image:" "${GITOPS_MANIFEST_PATH}"
 
-          # 用 | 作分隔符，避开 IMAGE_NAME 里的 /
-          sed -i "s|${IMAGE_NAME}:[^[:space:]]*|${NEW_IMAGE}|g" \
+          # 同时匹配旧 Tag 与旧 Digest 引用，保持清单只引用 repository@sha256:...。
+          sed -i -E "s|${IMAGE_NAME}(@sha256:[0-9a-f]{64}|:[^[:space:]]+)|${NEW_IMAGE}|g" \
             "${GITOPS_MANIFEST_PATH}"
 
           echo "=== 替换后 ==="
           grep -n "image:" "${GITOPS_MANIFEST_PATH}"
+          grep -Eq "${IMAGE_NAME}@sha256:[0-9a-f]{64}" "${GITOPS_MANIFEST_PATH}" \
+            || { echo "::error::清单未写入不可变 Digest"; exit 1; }
+
           echo "=== git diff ==="
           git --no-pager diff "${GITOPS_MANIFEST_PATH}"
 
