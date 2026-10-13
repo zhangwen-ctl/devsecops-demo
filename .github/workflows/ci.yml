@@ -90,7 +90,7 @@ jobs:
           grep -n "image:" "${GITOPS_MANIFEST_PATH}"
 
           # 同时匹配旧 Tag 与旧 Digest 引用，保持清单只引用 repository@sha256:...。
-          sed -i -E "s|${IMAGE_NAME}(@sha256:[0-9a-f]{64}|:[^[:space:]]+)|${NEW_IMAGE}|g" \
+          sed -i -E "s#${IMAGE_NAME}(@sha256:[0-9a-f]{64}|:[^[:space:]]+)#${NEW_IMAGE}#g" \
             "${GITOPS_MANIFEST_PATH}"
 
           echo "=== 替换后 ==="
