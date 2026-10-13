@@ -17,17 +17,17 @@ spec:
       containers:
         - name: devsecops-demo
           image: registry.dfl.com.cn/devops/github/devsecops-demo:15
-           env:
-            - name: DB_USERNAME
-              valueFrom:
-                secretKeyRef:
-                  name: payment-api-secret
-                  key: DB_USERNAME
-            - name: DB_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: payment-api-secret
-                  key: DB_PASSWORD
+          env:
+          - name: DB_USERNAME
+            valueFrom:
+              secretKeyRef:
+                name: payment-api-secret
+                key: DB_USERNAME
+          - name: DB_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: payment-api-secret
+                key: DB_PASSWORD
           ports:
             - containerPort: 8080
           readinessProbe:
