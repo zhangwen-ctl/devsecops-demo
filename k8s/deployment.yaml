@@ -16,7 +16,7 @@ spec:
     spec:
       containers:
         - name: devsecops-demo
-          image: registry.dfl.com.cn/devops/github/devsecops-demo:15
+          image: registry.dfl.com.cn/devops/github/devsecops-demo@sha256:826afca9b30335f899f938655ebdc9250dbe67b15547f11e0c9724f4fcde60de
           env:
           - name: DB_USERNAME
             valueFrom:
