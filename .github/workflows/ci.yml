@@ -10,6 +10,8 @@ permissions:
 
 env:
   IMAGE_NAME: registry.dfl.com.cn/devops/github/devsecops-demo
+  SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+  SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
   PUBLISH_IMAGE: ${{ secrets.PUBLISH_IMAGE }}
   GITOPS_MANIFEST_PATH: k8s/deployment.yaml
 
@@ -32,6 +34,13 @@ jobs:
 
       - name: Unit tests
         run: python3 -m unittest discover -v
+
+      - name: SonarQube scan
+        if: ${{ env.SONAR_TOKEN != '' }}
+        uses: SonarSource/sonarqube-scan-action@v8.2.1
+        env:
+          SONAR_HOST_URL: ${{ env.SONAR_HOST_URL }}
+          SONAR_TOKEN: ${{ env.SONAR_TOKEN }}
 
       - name: Build image
         run: docker build -t "${IMAGE_NAME}:${GITHUB_RUN_NUMBER}" .
